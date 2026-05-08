@@ -1,0 +1,294 @@
+---
+title: "TFM_V2"
+author: "RIVILLA_CRISTIAN"
+date: "2026-04-22"
+output: html_document
+---
+
+```{r}
+# Preparar librerías
+install.packages("BiocManager")
+library(BiocManager)
+install.packages("rlang")
+update.packages(ask = FALSE)
+
+BiocManager::install(c("TCGAbiolinks", "maftools"))
+install.packages("dplyr")
+install.packages("readr")
+install.packages("stringr")
+
+library(TCGAbiolinks)
+library(maftools)
+library(dplyr)
+library(readr)
+library(stringr)
+library(ggplot2)
+library(purrr)
+
+packageVersion("TCGAbiolinks")
+packageVersion("maftools")
+packageVersion("ggplot2")
+packageVersion("dplyr")
+
+```
+
+
+```{r}
+# 1. DATOS EN TCGA
+# Búsqueda en TCGA
+query_maf <- GDCquery( 
+  project = "TCGA-SKCM", 
+  data.category = "Simple Nucleotide Variation", 
+  data.type = "Masked Somatic Mutation" 
+) 
+ 
+GDCdownload(query_maf) 
+maf_q <- GDCprepare(query_maf) 
+
+# Formato MAF
+maf_tcga <- maf_q %>% 
+  as.data.frame() 
+
+# Datos clínicos
+clinical_tcga <- GDCquery_clinic("TCGA-SKCM", type = "clinical") %>% 
+  select(patient = submitter_id, gender) 
+ 
+maf_tcga <- maf_tcga %>% #se integran los datos
+  mutate(patient = substr(Tumor_Sample_Barcode, 1, 12)) %>% 
+  inner_join(clinical_tcga, by = "patient")
+
+coding_variants <- c(
+  "Missense_Mutation",
+  "Nonsense_Mutation",
+  "Frame_Shift_Del",
+  "Frame_Shift_Ins",
+  "Splice_Site",
+  "Nonstop_Mutation",
+  "In_Frame_Del",
+  "In_Frame_Ins",
+  "Translation_Start_Site"
+)
+
+# 2. LIMPIEZA
+maf_tcga_clean <- maf_tcga %>%
+  filter(
+    !is.na(gender),
+    !is.na(Hugo_Symbol),
+    !is.na(Variant_Classification),
+    Variant_Classification %in% coding_variants
+  )
+
+# 3. CREAR MAF
+maf_tcga_obj <- read.maf(maf = maf_tcga_clean)
+
+# 4. TMB
+tmb_tcga <- tmb(maf = maf_tcga_obj)
+tmb_tcga <- tmb_tcga %>% mutate(patient = substr(Tumor_Sample_Barcode, 1, 12)) %>% left_join( maf_tcga_clean %>% distinct(patient, gender), by = "patient" )
+
+summary(tmb_tcga$TMB)
+ wilcox.test(total_perMB ~ gender, data = tmb_tcga)
+
+
+# 5. FRECUENCIA DE GENES
+gene_freq_tcga <- maf_tcga_clean %>%
+  distinct(patient, gender, Hugo_Symbol) %>%
+  count(gender, Hugo_Symbol, name = "n_patients_mut") %>%
+  left_join(
+    maf_tcga_clean %>%
+      distinct(patient, gender) %>%
+      count(gender, name = "n_total"),
+    by = "gender"
+  ) %>%
+  mutate(freq = n_patients_mut / n_total) %>%
+  arrange(gender, desc(freq))
+
+# 6. TOP GENES
+top_genes_tcga <- gene_freq_tcga %>% 
+  group_by(gender) %>% 
+  slice_max(freq, n = 10)
+View(top_genes_tcga)
+
+ggplot(top_genes_tcga, aes(x = reorder(Hugo_Symbol, freq), y = freq, fill = gender)) +
+  geom_col() +
+  coord_flip() +
+  facet_wrap(~gender, scales = "free") +
+  theme_minimal() +
+  labs(title = "Top mutated genes by sex (TCGA)",
+       x = "Gene",
+       y = "proportion of patients")
+
+
+# 7. MAF COMPARE
+male_samples <- maf_tcga_clean %>%
+  filter(gender == "male") %>%
+  distinct(Tumor_Sample_Barcode) %>%
+  pull()
+
+female_samples <- maf_tcga_clean %>%
+  filter(gender == "female") %>%
+  distinct(Tumor_Sample_Barcode) %>%
+  pull()
+
+maf_compare <- mafCompare(
+  m1 = subsetMaf(maf_tcga_obj, tsb = male_samples),
+  m2 = subsetMaf(maf_tcga_obj, tsb = female_samples)
+)
+
+head(maf_compare$results)
+
+```
+
+
+
+```{r}
+# cBioPortal
+# 1. BUSQUEDA EN cBioPortal
+leer_estudio_cbio <- function(mut_file, clin_file, study_name, comment = "") {
+  
+  maf <- read_tsv(mut_file, comment = comment, show_col_types = FALSE)
+  
+  clin <- read_tsv(clin_file, show_col_types = FALSE) %>%
+    rename(
+      patient = `#Patient Identifier`,
+      gender = Sex
+    ) %>%
+    distinct(patient, .keep_all = TRUE)
+  
+  maf %>%
+    mutate(patient = str_sub(Tumor_Sample_Barcode, 1, 12)) %>%
+    left_join(clin, by = "patient") %>%
+    mutate(
+      gender = str_to_lower(gender),
+      source = "cBioPortal",
+      study = study_name
+    ) %>%
+    mutate(across(everything(), as.character)) %>%
+    filter(
+      !is.na(Hugo_Symbol),
+      !is.na(Variant_Classification),
+      !is.na(Tumor_Sample_Barcode)
+    )
+}
+
+# 2. ESTUDIOS PARA LA BUSQUEDA
+estudios_cbio <- list(
+  list("M_Melanoma_DFCI_2015/DFCI_2015_mutations.txt", "M_Melanoma_DFCI_2015/DFCI_2015_patient.txt", "DFCI_2015", ""),
+  list("Melanoma_Broad_2012/Broad_2012_mutations.txt", "Melanoma_Broad_2012/Broad_2012_patient.txt", "Broad_2012", ""),
+  list("S_Melanoma_Broad_2012/SM_Broad_2012_mutations.txt", "S_Melanoma_Broad_2012/SM_Broad_2012_patient.txt", "SM_Broad_2012", "#"),
+  list("S_Melanoma_Broad_2014/SM_Broad_2014_mutations.txt", "S_Melanoma_Broad_2014/SM_Broad_2014_patient.txt", "SM_Broad_2014", "#"),
+  list("S_Melanoma_Yale_2012/Yale_2012_mutations.txt", "S_Melanoma_Yale_2012/Yale_2012_patient.txt", "Yale_2012", "")
+)
+
+# UNION DE ESTUDIOS
+maf_cbioP <- purrr::map_dfr(
+  estudios_cbio,
+  ~ leer_estudio_cbio(.x[[1]], .x[[2]], .x[[3]], .x[[4]])
+)  
+
+# LIMPIEZA
+maf_cbio_clean <- maf_cbioP %>%
+  mutate(
+    Variant_Classification = case_when(
+      Variant_Classification == "NONSENSE" ~ "Nonsense_Mutation",
+      TRUE ~ Variant_Classification
+    )
+  ) %>%
+  filter(
+    !is.na(gender),
+    !is.na(Hugo_Symbol),
+    !is.na(Variant_Classification),
+    Variant_Classification %in% coding_variants
+  )
+
+# CRER MAF
+clinical_cbio <- maf_cbio_clean %>%
+distinct(Tumor_Sample_Barcode, gender)
+
+maf_object_cbio <- read.maf(
+maf = maf_cbio_clean,
+clinicalData = clinical_cbio
+)
+
+# TMB
+tmb_cbio <- tmb(maf = maf_object_cbio)
+
+
+tmb_cbio <- tmb_cbio %>%
+  left_join(
+    maf_object_cbio@clinical.data %>%
+      select(Tumor_Sample_Barcode, gender),
+    by = "Tumor_Sample_Barcode"
+  )
+
+wilcox.test(total_perMB ~ gender, data = tmb_cbio)
+
+# FRECUENCIA DE GENES
+gene_freq_cbio <- maf_cbio_clean %>% 
+  distinct(patient, gender, Hugo_Symbol) %>% 
+  count(gender, Hugo_Symbol, name = "n_patients_mut") %>% 
+  left_join(
+    maf_cbio_clean %>% 
+      distinct(patient, gender) %>% 
+      count(gender, name = "n_total"),
+    by = "gender"
+  ) %>% 
+  mutate(freq = n_patients_mut / n_total) %>% 
+  arrange(gender, desc(freq))
+
+
+# TOP GENES
+top_genes_cbio <- gene_freq_cbio %>% 
+  group_by(gender) %>% 
+  slice_max(freq, n = 10)
+View(top_genes_cbio)
+
+ggplot(top_genes_cbio, aes(x = reorder(Hugo_Symbol, freq), y = freq, fill = gender)) +
+  geom_col() +
+  coord_flip() +
+  facet_wrap(~gender, scales = "free") +
+  theme_minimal() +
+  labs(title = "Top mutated genes by sex (cBioPortal)",
+       x = "Gene",
+       y = "Proportion of patients")
+
+# 8. MAF COMPARE
+
+male_samples_cbio <- clinical_cbio %>%
+  filter(gender == "male") %>%
+  pull(Tumor_Sample_Barcode)
+
+female_samples_cbio <- clinical_cbio %>%
+  filter(gender == "female") %>%
+  pull(Tumor_Sample_Barcode)
+
+maf_compare_cbio <- mafCompare(  
+  m1 = subsetMaf(maf_object_cbio, tsb = male_samples_cbio),
+  m2 = subsetMaf(maf_object_cbio, tsb = female_samples_cbio)
+)
+
+head(maf_compare_cbio$results)
+```
+
+
+```{r}
+# Comparación entre bases de datos
+
+# Ajuste de p-value por múltiples comparaciones
+sig_tcga <- maf_compare$results %>% # TCGA
+  filter(adjPval < 0.05)
+sig_cbio <- maf_compare_cbio$results %>% # cBioPortal
+  filter(adjPval < 0.05)
+
+# Comparación
+common_genes <- intersect(sig_tcga$Hugo_Symbol, sig_cbio$Hugo_Symbol)
+common_genes
+
+head(sig_tcga$Hugo_Symbol)
+head(sig_cbio$Hugo_Symbol)
+
+head(maf_compare_cbio$results[, c("Hugo_Symbol", "pval", "adjPval")]) # resultados disminuyendo la exigencia estadística
+
+
+
+```
+

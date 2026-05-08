@@ -1,0 +1,25 @@
+.Rhistory
+.RData
+.Rproj.user
+
+# outputs
+*.html
+*.pdf
+*.png
+
+# datos grandes
+*.maf
+*.tsv
+*.txt
+*.csv
+*.gz
+
+# carpetas grandes
+resultados_adicionales/
+GDCdata/
+data/
+TCGA/
+
+# temporales
+cache/
+tmp/
