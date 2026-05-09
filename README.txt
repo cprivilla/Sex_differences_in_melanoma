@@ -85,3 +85,6 @@ The pipeline included the following steps:
 ```text
 ├── TFM_V1.Rmd
 ├── README.md
+├── results
+├── figures
+├── session_info
