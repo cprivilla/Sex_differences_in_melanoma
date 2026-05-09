@@ -1,25 +1,41 @@
+# Historial y entorno R
 .Rhistory
 .RData
+.RDataTmp
 .Rproj.user
 
-# outputs
+# Archivos renderizados
 *.html
 *.pdf
-*.png
 
-# datos grandes
+# Datos crudos grandes
 *.maf
 *.tsv
-*.txt
-*.csv
 *.gz
+*.tar
 
-# carpetas grandes
-resultados_adicionales/
+# Carpetas grandes de datos
 GDCdata/
 data/
 TCGA/
 
-# temporales
+# Temporales
 cache/
 tmp/
+
+# Logs
+*.log
+
+# Estudios melanoma crudos
+M_Melanoma_*/
+Melanoma_*/
+S_Melanoma_*/
+
+# Resultados antiguos
+resultados_adicionales/
+
+# Archivos auxiliares
+MANIFEST.txt
+README.txt
+code_R_TFM_CR.Rmd
+Text/
