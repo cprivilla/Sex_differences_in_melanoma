@@ -364,7 +364,7 @@ genes_top <- union(genes_top_male, genes_top_female)
 
 # Gráfico Oncoplot
 png(
-  filename = "resultados_adicionales/oncoplot_comparativo_TCGA.png",
+  filename = "figures/oncoplot_comparativo_TCGA.png",
   width = 1400,
   height = 900,
   res = 120
@@ -454,13 +454,13 @@ preparar_volcano <- function(res_compare, titulo, archivo_salida) {
 p_volcano_tcga <- preparar_volcano(
   res_compare = maf_compare,
   titulo = "Volcano plot — Diferencias por sexo en TCGA-SKCM",
-  archivo_salida = "resultados_adicionales/volcano_TCGA.png"
+  archivo_salida = "figures/volcano_TCGA.png"
 )
 
 p_volcano_cbio <- preparar_volcano(
   res_compare = maf_compare_cbio,
   titulo = "Volcano plot — Diferencias por sexo en cBioPortal",
-  archivo_salida = "resultados_adicionales/volcano_cBioPortal.png"
+  archivo_salida = "figures/volcano_cBioPortal.png"
 )
 
 #Comparación entre bases de datos - Diagrama de Venn
@@ -486,7 +486,7 @@ write.csv(
 )
 
 png(
-  filename = "resultados_adicionales/venn_comparacion_TCGA_cBioPortal.png",
+  filename = "figures/venn_comparacion_TCGA_cBioPortal.png",
   width = 1200,
   height = 900,
   res = 150
@@ -555,7 +555,7 @@ p_glm <- ggplot(
   )
 
 ggsave(
-  filename = "resultados_adicionales/glm_tmb_sexo.png",
+  filename = "figures/glm_tmb_sexo.png",
   plot = p_glm,
   width = 8,
   height = 4,
@@ -563,7 +563,7 @@ ggsave(
 )
 
 # Versiones de paquetes para reproducibilidad
-sink("resultados_adicionales/session_info.txt")
+sink("session_info.txt")
 sessionInfo()
 sink()
 
